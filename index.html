@@ -428,7 +428,7 @@ let pdfDoc = null;
 let currentPage = 1;
 let totalPages = 0;
 let isFlipping = false;
-let renderedPages = {};
+let renderedPages = {}; // stores offscreen canvases keyed by page number
 
 const pageEl = document.getElementById('page');
 const canvas = document.getElementById('pdfCanvas');
@@ -534,14 +534,6 @@ async function renderPage(pageNum) {
   if (!pdfDoc) return;
   loadingEl.classList.add('active');
 
-  if (renderedPages[pageNum]) {
-    canvas.style.display = 'block';
-    loadingEl.classList.remove('active');
-    placeholderEl.style.display = 'none';
-    updateButtons();
-    return;
-  }
-
   const page = await pdfDoc.getPage(pageNum);
   const viewport = page.getViewport({ scale: 1.5 });
 
@@ -550,8 +542,16 @@ async function renderPage(pageNum) {
   canvas.style.width = '100%';
   canvas.style.height = '100%';
 
-  await page.render({ canvasContext: ctx, viewport }).promise;
-  renderedPages[pageNum] = true;
+  if (renderedPages[pageNum]) {
+    ctx.drawImage(renderedPages[pageNum], 0, 0);
+  } else {
+    await page.render({ canvasContext: ctx, viewport }).promise;
+    const snap = document.createElement('canvas');
+    snap.width = canvas.width;
+    snap.height = canvas.height;
+    snap.getContext('2d').drawImage(canvas, 0, 0);
+    renderedPages[pageNum] = snap;
+  }
 
   canvas.style.display = 'block';
   loadingEl.classList.remove('active');
@@ -559,11 +559,11 @@ async function renderPage(pageNum) {
   updateButtons();
 
   // Pre-render next pages
-  if (pageNum + 1 <= totalPages && !renderedPages[pageNum + 1]) {
-    prerenderPage(pageNum + 1);
-  }
-  if (pageNum + 2 <= totalPages && !renderedPages[pageNum + 2]) {
-    prerenderPage(pageNum + 2);
+  for (let i = 1; i <= 3; i++) {
+    const next = pageNum + i;
+    if (next <= totalPages && !renderedPages[next]) {
+      prerenderPage(next);
+    }
   }
 }
 
@@ -576,7 +576,7 @@ async function prerenderPage(pageNum) {
   offCanvas.width = viewport.width;
   offCanvas.height = viewport.height;
   await page.render({ canvasContext: offCtx, viewport }).promise;
-  renderedPages[pageNum] = true;
+  renderedPages[pageNum] = offCanvas;
 }
 
 async function flipPage(direction) {
